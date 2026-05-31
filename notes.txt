@@ -1,0 +1,7 @@
+module purpose:
+
+- intake SCK, WS, SD raw data
+
+- compile words from bit-by-bit input
+
+- route the compiled word as output
