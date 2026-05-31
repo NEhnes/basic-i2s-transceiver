@@ -16,6 +16,8 @@ clock is gonna come from my testbench
 
 ## DETAILED
 
+0. Reset logic: clear registers, set data flag - 0;
+
 1. Latch WS, SD on posedge SCK
 
 2. If WS changed → reset counter, clear register
