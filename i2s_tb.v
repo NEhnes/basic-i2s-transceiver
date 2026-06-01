@@ -26,8 +26,20 @@ initial begin
     // initialize testbench counters
     data_counter = 1'b0;
     word_counter = 32'b0;
+    // initialize testbench data source
+    //
+    //
+    //
 
     // initialize uut port variables
+    transceiver uut (
+        .rst_n(i_rst_n),
+        .sck(i_sck),
+        .ws(i_ws),
+        .sd(i_sd),
+        .valid(o_valid),
+        .data(src_data)
+    );
 
     // reset
 
