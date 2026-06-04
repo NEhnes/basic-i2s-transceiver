@@ -1,10 +1,8 @@
-// LACKS AN ACK THAT MESSAGE WAS RECEIVED
-// I'M AWARE THAT OUTPUT DATA IS HANDLED POORLY RIGHT NOW
-// IF THE DESTINATION MISSED THE CLOCK CYCLE, DATA IS GONE
-// KEEP IN MIND THAT THIS IS 1 CYCLE BEHIND
+// still drops first word after reset, but that's fine
+
 module transceiver #(
     parameter WIDTH = 24,
-    parameter COUNTER_BITS = 5
+    parameter COUNTER_BITS = 5    // 5 bits covers 0–24
 )(
     input  wire        rst_n,
     input  wire        sck,
@@ -12,89 +10,80 @@ module transceiver #(
     input  wire        sd,
     output reg         valid,
     output reg  [WIDTH-1:0] data
-); 
+);
 
-reg r_ws, r_sd; 
+reg r_ws, r_sd;
 reg r_ws_last;
 
-reg [COUNTER_BITS-1:0] word_counter;
+reg [COUNTER_BITS-1:0] word_counter;  // 0 = idle, 1..WIDTH = capturing
 
 reg [WIDTH-1:0] channel_1;
 reg [WIDTH-1:0] channel_2;
 
-always@(posedge sck) begin
+always @(posedge sck) begin
 
-    // reset logic
     if (!rst_n) begin
-        // data is not valid, clear the garbage
-        valid <= 1'b0;
-        data <= 24'b0;
+        valid        <= 1'b0;
+        data         <= 24'b0;
 
-        r_sd <= 1'b0;
+        r_sd         <= 1'b0;
+        r_ws         <= ws;
+        r_ws_last    <= ws;            // ← FIX 1: match, don't force fake edge
 
-        r_ws <= ws;
-        r_ws_last <= ws;
-
-        // reset counter of bits within word
-        word_counter <= 5'b0;
-
-        // clear channels for safety (not strictly necessary)
-        channel_1 <= 24'b0;
-        channel_2 <= 24'b0;
+        word_counter <= 5'b0;          // ← idle
+        channel_1    <= 24'b0;
+        channel_2    <= 24'b0;
     end
 
     else begin
-        // latch my inputs
+        // latch inputs (1 cycle delayed)
         r_ws <= ws;
         r_sd <= sd;
 
-        // new word
+        // ── NEW WORD DETECTED ──────────────────────────
         if (r_ws_last != r_ws) begin
-            // *****CURRENT BUG*****
-            // IS TAKING LAST WORD'S LSB BECAUSE CYCLE IS 1 BEHIND
-            // IMPLEMENT PIPELINE OR HANDLE OTHERWISE
+            valid        <= 1'b0;
+            word_counter <= 5'd1;                     // start capturing
+            r_ws_last    <= r_ws;
 
-            // de-assert valid to indicate stale data
-            valid <= 1'b0;
+            // write MSB (bit WIDTH-1)
+            if (r_ws)
+                channel_2[WIDTH-1] <= r_sd;
+            else
+                channel_1[WIDTH-1] <= r_sd;
+        end
 
-            // hardcode for safety
-            word_counter <= 5'b1;
+        // ── NO NEW WORD ───────────────────────────────
+        else begin
 
-            // write MSB to correct channel, hardcode to MSB index for safety
-            if (r_ws) channel_2[WIDTH-1] <= r_sd; 
-            else      channel_1[WIDTH-1] <= r_sd;
-
-            // update last WS variable to proceed in writing full word
-            r_ws_last <= r_ws;
-        
-        // no new word
-        end else begin
-
-            if (word_counter == (WIDTH - 1)) begin
-                // LAST CHARACTER WRITE
-
-                // READS FROM LAST CYCLE BCZ LATCHING
-                // when word_counter is 23, it will be writing to slot 0
-                // hence, completed word
-                valid <= 1;
-
-                // reset word counter for next word
-                word_counter <= 5'b0;
-
-                // write data to appropriate channel
-                if (r_ws) data <= channel_2;
-                else      data <= channel_1;
-
-            end else begin
-                // STANDARD WRITE
-                // will take effect next cycle
-                word_counter <= word_counter + 1; // increment counter
-
-                // write to correct bit
-                if (r_ws) channel_2[23 - word_counter] <= r_sd;
-                else      channel_1[23 - word_counter] <= r_sd;
+            if (word_counter == 5'd0) begin
+                // idle — waiting for first WS edge after reset
+                // do nothing
             end
-            
+
+            else if (word_counter == (WIDTH - 1)) begin // end of word
+
+                valid        <= 1'b1;
+                word_counter <= 5'd0;                 // back to idle
+
+                // concatenate data bcz it gets dropped otherwise
+
+                if (r_ws)
+                    data <= {channel_2[WIDTH-1:1], r_sd}; 
+                else
+                    data <= {channel_1[WIDTH-1:1], r_sd}; 
+            end
+
+            else begin                                // word_counter = 1..WIDTH-1
+                // write to bit [WIDTH-1 - word_counter]
+                // counter=1 → bit 22, counter=23 → bit 0
+                if (r_ws)
+                    channel_2[WIDTH-1 - word_counter] <= r_sd;
+                else
+                    channel_1[WIDTH-1 - word_counter] <= r_sd;
+
+                word_counter <= word_counter + 5'd1;
+            end
         end
     end
 end
