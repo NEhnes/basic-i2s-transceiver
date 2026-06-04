@@ -50,6 +50,12 @@ always@(posedge sck) begin
 
         // new word
         if (r_ws_last != r_ws) begin
+            // *****CURRENT BUG*****
+            // IS TAKING LAST WORD'S LSB BECAUSE CYCLE IS 1 BEHIND
+            // IMPLEMENT PIPELINE OR HANDLE OTHERWISE
+
+            // de-assert valid to indicate stale data
+            valid <= 1'b0;
 
             // hardcode for safety
             word_counter <= 5'b1;
@@ -64,21 +70,12 @@ always@(posedge sck) begin
         // no new word
         end else begin
 
-            // will take effect next cycle
-            word_counter <= word_counter + 1; // increment counter
-
-            // write to correct bit
-            if (r_ws) channel_2[23 - word_counter] <= r_sd;
-            else      channel_1[23 - word_counter] <= r_sd;
-
-            // READS FROM LAST CYCLE BCZ LATCHING
-            // when word_counter is 23, it will be writing to slot 0
-            // hence, completed word
             if (word_counter == (WIDTH - 1)) begin
+                // LAST CHARACTER WRITE
 
-                // valid will always be true unless immediately following reset
-                // this is DIFFERENT than axi-stream valid
-                // does NOT indicate new data, just that the data isn't garbage 
+                // READS FROM LAST CYCLE BCZ LATCHING
+                // when word_counter is 23, it will be writing to slot 0
+                // hence, completed word
                 valid <= 1;
 
                 // reset word counter for next word
@@ -88,7 +85,16 @@ always@(posedge sck) begin
                 if (r_ws) data <= channel_2;
                 else      data <= channel_1;
 
+            end else begin
+                // STANDARD WRITE
+                // will take effect next cycle
+                word_counter <= word_counter + 1; // increment counter
+
+                // write to correct bit
+                if (r_ws) channel_2[23 - word_counter] <= r_sd;
+                else      channel_1[23 - word_counter] <= r_sd;
             end
+            
         end
     end
 end
