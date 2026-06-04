@@ -4,27 +4,25 @@
 module i2s_tb;
 
   // -------------------------------------------------------------------------
-  // DUT ports (driven by the testbench)
+  // UUT ports
   // -------------------------------------------------------------------------
-  reg        i_sck;
-  reg        i_rst_n;
-  reg        i_ws;
-  reg        i_sd;
-  wire       o_valid;
+  reg         i_rst_n;
+
+  reg         i_sck = 0;
+  reg         i_ws;
+  reg         i_sd;
+
+  wire        o_valid;
   wire [23:0] o_data;
 
   // -------------------------------------------------------------------------
   // Test vectors
   // -------------------------------------------------------------------------
-  // 24‑bit words we want the DUT to reconstruct.
-  // Each entry is one 24‑bit word that will be serialized LSB‑first.
-  reg [32:0] src_data [0:3];   // a few words for the demo
+  reg [23:0] src_data [0:3];   // a few words for the demo
   integer    data_counter;    // counts bits transmitted for the current word
   integer    word_counter;    // counts words transmitted
 
-  // -------------------------------------------------------------------------
-  // Instantiate the DUT
-  // -------------------------------------------------------------------------
+  // instantiate test module
   transceiver uut (
       .rst_n (i_rst_n),
       .sck   (i_sck),
@@ -34,24 +32,28 @@ module i2s_tb;
       .data  (o_data)
   );
 
-  // -------------------------------------------------------------------------
-  // Clock generation (20 ns period → 50 MHz)
-  // -------------------------------------------------------------------------
-  initial i_sck = 0;
-  always #10 i_sck = ~i_sck;   // toggle every 10 ns
+  // toggle clock every 10ns (20ns cycle time)
+  always begin
+    i_sck = ~i_sck;
+    #10;
+  end
+
+  
+
+
 
   // -------------------------------------------------------------------------
   // Test stimulus
   // -------------------------------------------------------------------------
   initial begin
     // -------------------------------------------------
-    // 1️⃣  Dump waveform for later inspection
+    // Dump waveform for later inspection
     // -------------------------------------------------
-    $dumpfile("i2s.vcd");
+    $dumpfile("i2s_tb.vcd");
     $dumpvars(0, i2s_tb);
 
     // -------------------------------------------------
-    // 2️⃣  Initialise registers
+    // Initialise registers
     // -------------------------------------------------
     i_rst_n = 0;          // keep DUT in reset initially
     i_ws    = 0;
@@ -60,45 +62,53 @@ module i2s_tb;
     word_counter = 0;
 
     // -------------------------------------------------
-    // 3️⃣  Load a few test words (feel free to edit)
+    // Test words (6 HEX CHARACTERS * 4bit per = 24 bit per word)
     // -------------------------------------------------
-    src_data[0] = 24'hDEADDD;
-    src_data[1] = 24'hBABEEE;
-    src_data[2] = 24'hBADBAD;
-    src_data[3] = 24'hF0000D;
+
+    // src_data[0] = 24'hABCDEF;
+    // src_data[1] = 24'h123456;
+    // src_data[2] = 24'hBADBAD;
+    // src_data[3] = 24'hF0000D;
+
+    // alternating high-low switching - easy to spot in waveform
+    // to check that data is being transmitted properly
+    src_data[0] = 24'b010101010101010101010101; // 1-1-1-1
+    src_data[1] = 24'b001100110011001100110011; // 2-2-2-2
+    src_data[2] = 24'b000111000111000111000111; // 3-3-3-3
+    src_data[3] = 24'b000011110000111100001111; // 4-4-4-4
 
     // -------------------------------------------------
-    // 4️⃣  Release reset after a couple of clock edges
+    // Release reset after a couple of clock edges
     // -------------------------------------------------
     #40 i_rst_n = 1;  // de‑assert reset
 
     // -------------------------------------------------
-    // 5️⃣  Transmit all words, LSB‑first, one bit per clock
+    // Transmit all words, LSB‑first, one bit per clock
     // -------------------------------------------------
     for (word_counter = 0; word_counter < 4; word_counter = word_counter + 1) begin
       // WS is high for the left channel, low for the right channel.
       // For simplicity we toggle it every 32 bits.
-      i_ws = word_counter[0];   // 0,1,0,1 … (alternates each word)
+      i_ws <= word_counter[0];   // 0,1,0,1 … (alternates each word)
 
-      // Send 32 bits of the current word, LSB first
-      for (data_counter = 0; data_counter < 32; data_counter = data_counter + 1) begin
-        i_sd = src_data[word_counter][data_counter];
-        // Wait one rising edge of sck (the DUT samples on an edge)
+      // Send 24 bits of the current word, MSB first
+      for (data_counter = 0; data_counter < 24; data_counter = data_counter + 1) begin
+        // Subtract from 23 to grab the top bits first
+        i_sd <= src_data[word_counter][23 - data_counter]; 
         @(posedge i_sck);
       end
     end
 
     // -------------------------------------------------
-    // 6️⃣  Wait for the DUT to raise `valid` and capture the last word
+    // 6Wait for the DUT to raise `valid` and capture the last word
     // -------------------------------------------------
-    @(posedge o_valid);
-    $display("----- Received word -----");
-    $display("  Expected : %h", src_data[word_counter-1]);
-    $display("  DUT out  : %h", o_data);
-    $display("--------------------------");
+    // @(posedge o_valid);
+    // $display("----- Received word -----");
+    // $display("  Expected : %h", src_data[word_counter-1]);
+    // $display("  DUT out  : %h", o_data);
+    // $display("--------------------------");
 
     // -------------------------------------------------
-    // 7️⃣  Finish simulation
+    // Finish simulation
     // -------------------------------------------------
     #100 $finish;
   end

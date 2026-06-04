@@ -1,22 +1,26 @@
 // LACKS AN ACK THAT MESSAGE WAS RECEIVED
 // I'M AWARE THAT OUTPUT DATA IS HANDLED POORLY RIGHT NOW
 // IF THE DESTINATION MISSED THE CLOCK CYCLE, DATA IS GONE
-module transceiver(
+// KEEP IN MIND THAT THIS IS 1 CYCLE BEHIND
+module transceiver #(
+    parameter WIDTH = 24,
+    parameter COUNTER_BITS = 5
+)(
     input  wire        rst_n,
     input  wire        sck,
     input  wire        ws,
     input  wire        sd,
     output reg         valid,
-    output reg  [23:0] data     // ideally width shouldn't be hardcoded
+    output reg  [WIDTH-1:0] data
 ); 
 
 reg r_ws, r_sd; 
 reg r_ws_last;
 
-reg [4:0] word_counter;
+reg [COUNTER_BITS-1:0] word_counter;
 
-reg [23:0] channel_1;
-reg [23:0] channel_2;
+reg [WIDTH-1:0] channel_1;
+reg [WIDTH-1:0] channel_2;
 
 always@(posedge sck) begin
 
@@ -26,9 +30,10 @@ always@(posedge sck) begin
         valid <= 1'b0;
         data <= 24'b0;
 
-        // set them to opposite of current - this way we can't get part of a word
-        r_ws <= !ws;
-        r_ws_last <= !ws;
+        r_sd <= 1'b0;
+
+        r_ws <= ws;
+        r_ws_last <= ws;
 
         // reset counter of bits within word
         word_counter <= 5'b0;
@@ -46,12 +51,12 @@ always@(posedge sck) begin
         // new word
         if (r_ws_last != r_ws) begin
 
-            // increment word counter (MUST be at zero, only logical way possible)
-            word_counter <= word_counter + 1;
+            // hardcode for safety
+            word_counter <= 5'b1;
 
-            // write MSB to correct channel, hardcode index for safety
-            if (r_ws) channel_2[23] <= r_sd; 
-            else      channel_1[23] <= r_sd;
+            // write MSB to correct channel, hardcode to MSB index for safety
+            if (r_ws) channel_2[WIDTH-1] <= r_sd; 
+            else      channel_1[WIDTH-1] <= r_sd;
 
             // update last WS variable to proceed in writing full word
             r_ws_last <= r_ws;
@@ -59,16 +64,17 @@ always@(posedge sck) begin
         // no new word
         end else begin
 
+            // will take effect next cycle
             word_counter <= word_counter + 1; // increment counter
 
-            // write to correct slot
+            // write to correct bit
             if (r_ws) channel_2[23 - word_counter] <= r_sd;
             else      channel_1[23 - word_counter] <= r_sd;
 
             // READS FROM LAST CYCLE BCZ LATCHING
-            // when last cycle is 23, it will be writing to slot zero
+            // when word_counter is 23, it will be writing to slot 0
             // hence, completed word
-            if (word_counter == 23) begin
+            if (word_counter == (WIDTH - 1)) begin
 
                 // valid will always be true unless immediately following reset
                 // this is DIFFERENT than axi-stream valid
