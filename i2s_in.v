@@ -1,6 +1,6 @@
 // still drops first word after reset, but that's fine
 
-module transceiver #(
+module transceiver_in #(
     parameter WIDTH = 24,
     parameter COUNTER_BITS = 5    // 5 bits covers 0–24
 )(

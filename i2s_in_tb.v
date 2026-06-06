@@ -1,7 +1,7 @@
 `timescale 1ns / 1ns
-`include "i2s.v"
+`include "i2s_in.v"
 
-module i2s_tb;
+module transceiver_in_tb;
 
   // -------------------------------------------------------------------------
   // UUT ports
@@ -23,7 +23,7 @@ module i2s_tb;
   integer    word_counter;    // counts words transmitted
 
   // instantiate test module
-  transceiver uut (
+  transceiver_in uut (
       .rst_n (i_rst_n),
       .sck   (i_sck),
       .ws    (i_ws),
@@ -49,8 +49,8 @@ module i2s_tb;
     // -------------------------------------------------
     // Dump waveform for later inspection
     // -------------------------------------------------
-    $dumpfile("i2s_tb.vcd");
-    $dumpvars(0, i2s_tb);
+    $dumpfile("i2s_in_tb.vcd");
+    $dumpvars(0, transceiver_in_tb);
 
     // -------------------------------------------------
     // Initialise registers
@@ -69,17 +69,6 @@ module i2s_tb;
     src_data[1] = 24'h123456;
     src_data[2] = 24'hBADBAD;
     src_data[3] = 24'hF0000D;
-
-    // alternating high-low switching - easy to spot in waveform
-    // to check that data is being transmitted properly
-    // src_data[0] = 24'b111111111111111111111111;
-    // src_data[1] = 24'b111111111111111111111111;
-    // src_data[2] = 24'b111111111111111111111111;
-    // src_data[3] = 24'b111111111111111111111111;
-    // src_data[0] = 24'b010101010101010101010101; // 1-1-1-1
-    // src_data[1] = 24'b001100110011001100110011; // 2-2-2-2
-    // src_data[2] = 24'b000111000111000111000111; // 3-3-3-3
-    // src_data[3] = 24'b000011110000111100001111; // 4-4-4-4
 
     // -------------------------------------------------
     // Release reset after a couple of clock edges
@@ -101,15 +90,6 @@ module i2s_tb;
         @(posedge i_sck);
       end
     end
-
-    // -------------------------------------------------
-    // 6Wait for the DUT to raise `valid` and capture the last word
-    // -------------------------------------------------
-    // @(posedge o_valid);
-    // $display("----- Received word -----");
-    // $display("  Expected : %h", src_data[word_counter-1]);
-    // $display("  DUT out  : %h", o_data);
-    // $display("--------------------------");
 
     // -------------------------------------------------
     // Finish simulation
