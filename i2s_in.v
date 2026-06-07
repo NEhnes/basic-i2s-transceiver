@@ -1,7 +1,7 @@
-// still drops first word after reset, but that's fine
+// channels ALMOST build words correctly, only the output logic is the issue
+// bcz valid never goes high
 
-// i do not need to worry about buffering. my next module is a dedicated fifo buffer that can run
-// well above the speed of this one. it will get its ready from downstream transceiver out
+// LSB always padded with a zero???
 
 module transceiver_in #(
     parameter WIDTH = 24,
@@ -23,6 +23,7 @@ module transceiver_in #(
 
 reg r_ws, r_sd;
 reg r_ws_last;
+reg new_word_temp;
 
 reg state; // 0 is idle, 1 is processing word
 
@@ -44,59 +45,55 @@ always @(posedge clk) begin
         word_counter <= 5'b0;
         channel_1    <= 24'b0;
         channel_2    <= 24'b0;
-    end
-
+        state        <= 1'b0;
+    end 
+    
     else begin
         // latch inputs (1 cycle delayed) for stability
         r_ws <= ws;
         r_sd <= sd;
 
-        // ── NEW WORD DETECTED ──────────────────────────
+        // Handle AXI-S handshake backpressure
+        // if (o_tready && o_tvalid) begin
+        //     o_tvalid <= 1'b0; 
+        // end
+
+        // ── NEW WORD DETECTED (WS EDGE) ─────────
         if (r_ws_last != r_ws) begin
-            word_counter <= 5'd1;
             r_ws_last    <= r_ws;
-            state <= 1;
-
-            // write MSB (bit WIDTH-1)
-            if (r_ws)
-                channel_2[WIDTH-1] <= r_sd;
-            else
-                channel_1[WIDTH-1] <= r_sd;
+            word_counter <= 5'b0; // Reset counter, wait for NEXT cycle to sample MSB
+            state        <= 1'b1;
+            
+            // Handle back-to-back I2S words safely (WS toggling exactly at word end)
+            if (state != 0 && word_counter == WIDTH) begin
+                // o_tvalid <= 1'b1;
+                // Reading old value of r_ws_last here correctly grabs the finished channel
+                tdata    <= r_ws_last ? channel_2 : channel_1;
+            end
         end
-
-        // ── NO NEW WORD ────── NOT IN IDLE ────────
+        // ── SHIFTING DATA ──
         else if (state != 0) begin
-
-            if (word_counter == (WIDTH - 1)) begin // end of word
-
+            if (word_counter == WIDTH - 1) begin // HAS TO BE -1 OR ELSE NOT TRIGGERED.
+                // WAS MISSING WRITE FOR LSB
                 o_tvalid <= 1'b1;
-                state <= 0;          // back to idle
-
-                // concatenate data bcz it gets dropped otherwise
+                $display("WORD END");
+                state    <= 1'b0; // back to idle
+                tdata    <= r_ws ? {channel_2[23:1], r_sd} : {channel_1[23:1], r_sd}; 
+            end else begin
+                // Write to bit [WIDTH-1 - word_counter]
                 if (r_ws)
-                    tdata <= {channel_2[WIDTH-1:1], r_sd}; 
+                    channel_2[WIDTH - 1 - word_counter] <= r_sd;
                 else
-                    tdata <= {channel_1[WIDTH-1:1], r_sd}; 
-            end
-
-            else begin
-                // write to bit [WIDTH-1 - word_counter]
-                // counter=1 → bit 22, counter=23 → bit 0
-                if (r_ws)
-                    channel_2[WIDTH-1 - word_counter] <= r_sd;
-                else
-                    channel_1[WIDTH-1 - word_counter] <= r_sd;
-
+                    channel_1[WIDTH - 1 - word_counter] <= r_sd;
+                
                 word_counter <= word_counter + 5'd1;
-            end
-        end
 
-        // AI IS FUCKING WRONG THIS SHIT IS VALID
-        // READS OLD VALUE SIGNAL AND DOES NOT CREATE A RACE CONDITION WITH THE WORD END LOGIC
-        if (o_tready && o_tvalid) begin // data transfer out happens
-            o_tvalid <= 1'b0; // set low until next complete word
+                // TEMPORARY VALID DE-ASSERTION FIX
+                if(word_counter == 5) begin
+                    o_tvalid <= 1'b0;
+                end
+            end
         end
     end
 end
-
 endmodule
