@@ -1,3 +1,10 @@
+/*
+this is by no means a comprehensive testbench
+i spent a lot of time analyzing the waveform in gtkwave
+
+formally verify later ... maybe
+*/
+
 `timescale 1ns / 1ps
 `include "i2s_in.v"
 
@@ -64,22 +71,20 @@ module transceiver_in_tb;
     test_over = 0;
 
     // --------- test words --------------
-    // src_data[0] = 24'hABCDEF; // 101010111100110111101111
-    // src_data[1] = 24'h123456; // 000100100011010001010110
-    // src_data[2] = 24'hBADBAD; // 101110101101101110101101
-    // src_data[3] = 24'hF0000D; // 111100000000000000001101
-
-    // ----------straight high -----------
-    // src_data[0] = 24'b111111111111111111111111;
-    // src_data[1] = 24'b111111111111111111111111;
-    // src_data[2] = 24'b111111111111111111111111;
-    // src_data[3] = 24'b111111111111111111111111;
+    src_data[0] = 24'hABCDEF; // 101010111100110111101111
+    src_data[1] = 24'h123456; // 000100100011010001010110 // shifted left 1
+    src_data[2] = 24'hBADBAD; // 101110101101101110101101 // shifted left 1
+    src_data[3] = 24'hF0000D; // 111100000000000000001101 // shifted left 1
+    // src_data[0] = 24'b101010111100110111101111;
+    // src_data[1] = 24'b000100100011010001010110; 
+    // src_data[2] = 24'b101110101101101110101101;
+    // src_data[3] = 24'b111100000000000000001101;
 
     // ---------- spot boundary issues between words ----------
-    src_data[0] = {24{1'b1}};
-    src_data[1] = {24{1'b0}};
-    src_data[2] = {24{1'b1}};
-    src_data[3] = {24{1'b0}};
+    // src_data[0] = {24{1'b1}};
+    // src_data[1] = {24{1'b0}};
+    // src_data[2] = {24{1'b1}};
+    // src_data[3] = {24{1'b0}};
 
     // ---------- easy to spot patterns ---------
     // src_data[0] = 24'b010101010101010101010101; // 1-1-1-1
@@ -87,31 +92,20 @@ module transceiver_in_tb;
     // src_data[2] = 24'b000111000111000111000111; // 3-3-3-3
     // src_data[3] = 24'b000011110000111100001111; // 4-4-4-4
 
-    // -------------------------------------------------
-    // Release reset after a couple of clock edges
-    // -------------------------------------------------
     #40 rst_n = 1;  // de‑assert reset
-
-    // change to 1: makes sure that it gets triggered within loop
-    ws = 1'b1;
-    #10
 
     // -------------------------------------------------
     // Transmit all words, LSB‑first, one bit per clock
     // -------------------------------------------------
     for (word_counter = 0; word_counter < 4; word_counter = word_counter + 1) begin
-      // WS is high for the left channel, low for the right channel.
-      // For simplicity we toggle it every 32 bits.
-      ws <= word_counter[0];   // 0,1,0,1 … (alternates each word)
+      ws <= ~ws;   // switch at start of word
 
       // Send 24 bits of the current word, MSB first
       for (data_counter = 0; data_counter < 24; data_counter = data_counter + 1) begin
         // Subtract from 23 to grab the top bits first
-        sd <= src_data[word_counter][23 - data_counter]; 
+        sd <= src_data[word_counter][23 - data_counter];
         @(posedge clk);
       end
-
-      #20;
     end
 
     // -------------------------------------------------

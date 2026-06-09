@@ -1,8 +1,3 @@
-// channels ALMOST build words correctly, only the output logic is the issue
-// bcz valid never goes high
-
-// LSB always padded with a zero???
-
 module transceiver_in #(
     parameter WIDTH = 24,
     parameter COUNTER_BITS = 5    // 5 bits covers 0–24
@@ -49,7 +44,7 @@ always @(posedge clk) begin
     end 
     
     else begin
-        // latch inputs (1 cycle delayed) for stability
+        // latch inputs (1 cycle delay) for stability
         r_ws <= ws;
         r_sd <= sd;
 
@@ -61,32 +56,37 @@ always @(posedge clk) begin
         // ── NEW WORD DETECTED (WS EDGE) ─────────
         if (r_ws_last != r_ws) begin
             r_ws_last    <= r_ws;
-            word_counter <= 5'b0; // Reset counter, wait for NEXT cycle to sample MSB
+            word_counter <= 5'b1; // Reset counter, wait for NEXT cycle to sample MSB
             state        <= 1'b1;
+
+            // write first data bit
+            if (r_ws)
+                channel_2[(WIDTH - 1)] <= r_sd;
+            else
+                channel_1[(WIDTH - 1)] <= r_sd;
             
             // Handle back-to-back I2S words safely (WS toggling exactly at word end)
-            if (state != 0 && word_counter == WIDTH) begin
+            if (word_counter == (WIDTH - 1)) begin
                 // o_tvalid <= 1'b1;
                 // Reading old value of r_ws_last here correctly grabs the finished channel
                 tdata    <= r_ws_last ? channel_2 : channel_1;
             end
         end
         // ── SHIFTING DATA ──
-        else if (state != 0) begin
-            if (word_counter == WIDTH - 1) begin // HAS TO BE -1 OR ELSE NOT TRIGGERED.
-                // WAS MISSING WRITE FOR LSB
-                o_tvalid <= 1'b1;
+        else if (state != 0) begin // does not get entered
+            if (word_counter == WIDTH) begin
+                // o_tvalid <= 1'b1;
                 $display("WORD END");
                 state    <= 1'b0; // back to idle
-                tdata    <= r_ws ? {channel_2[23:1], r_sd} : {channel_1[23:1], r_sd}; 
-            end else begin
+                tdata    <= r_ws ? channel_2[23:0] : channel_1[23:0]; 
+            end else begin // GETS ENABLED
                 // Write to bit [WIDTH-1 - word_counter]
                 if (r_ws)
-                    channel_2[WIDTH - 1 - word_counter] <= r_sd;
+                    channel_2[(WIDTH - 1) - word_counter] <= r_sd;
                 else
-                    channel_1[WIDTH - 1 - word_counter] <= r_sd;
+                    channel_1[(WIDTH - 1) - word_counter] <= r_sd;
                 
-                word_counter <= word_counter + 5'd1;
+                word_counter <= word_counter + 1;
 
                 // TEMPORARY VALID DE-ASSERTION FIX
                 if(word_counter == 5) begin
